@@ -5,14 +5,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 class FileClient:
-    def __init__(self, host='localhost', port=5555):
+    def __init__(self, host='0.0.0.0', port=5555):
         self.host = host
         self.port = port
         self.client_socket = None
 
     def connect(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect((self.host, self.port))
+        self.client_socket.connect(('192.168.4.249', self.port))
 
     def disconnect(self):
         if self.client_socket:
@@ -29,21 +29,26 @@ class FileClient:
         return response
 
     def download_file(self, file_path, download_path):
-        self.client_socket.send(f"get {file_path}".encode('utf-8'))
-        response = self.client_socket.recv(1024).decode('utf-8')
+        try:
+            self.client_socket.send(f"get {file_path}".encode('utf-8'))
+            response = self.client_socket.recv(1024).decode('utf-8')
 
-        if response == "Sending file...":
-            with open(download_path, 'wb') as file:
-                while True:
-                    file_data = self.client_socket.recv(1024)
-                    if file_data == b"DONE":
-                        break
-                    if not file_data:
-                        break
-                    file.write(file_data)
-            return f"File downloaded successfully at {download_path}."
-        else:
-            return response
+            if response == "Sending file...":
+                with open(download_path, 'wb') as file:
+                    while True:
+                        file_data = self.client_socket.recv(4096)  # Increased buffer size
+                        if not file_data:
+                            break
+                        if b"DONE" in file_data:
+                            file.write(file_data.replace(b"DONE", b""))  # Write the file excluding 'DONE'
+                            break
+                        file.write(file_data)
+                return f"File downloaded successfully at {download_path}."
+            else:
+                return response
+        except Exception as e:
+            print(f"Error during file download: {str(e)}")
+            return f"Error during file download: {str(e)}"
 
 class FileClientGUI:
     def __init__(self, root):
@@ -83,13 +88,23 @@ class FileClientGUI:
         self.search_button.pack(side=tk.RIGHT, padx=5, pady=5)
 
         # Initialize Treeview with additional columns for metadata
-        self.tree = ttk.Treeview(root, style="Custom.Treeview")
-        self.tree.pack(fill=tk.BOTH, expand=True)
-        self.tree.bind("<Double-1>", self.on_item_double_click)
+        self.tree_frame = tk.Frame(root)  # Create a frame to hold the Treeview and Scrollbar
+        self.tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Treeview
+        self.tree = ttk.Treeview(self.tree_frame, style="Custom.Treeview")
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Scrollbar
+        self.tree_scrollbar = tk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree_scrollbar.pack(side=tk.RIGHT, fill="y")
+
+        # Attach the scrollbar to the treeview
+        self.tree.config(yscrollcommand=self.tree_scrollbar.set)
 
         self.current_folder = "C:\\"
         self.folder_stack = []
-        self.dark_mode=False
+        self.dark_mode = False
 
         # Store all buttons and entries for dynamic theme changes
         self.buttons = [
@@ -103,6 +118,9 @@ class FileClientGUI:
 
         # Apply the initial theme configuration
         self.configure_theme()
+
+        # Bind double-click event to tree view (this was missing in the initial code)
+        self.tree.bind("<Double-1>", self.on_item_double_click)
 
 
     def configure_theme(self):
@@ -183,6 +201,7 @@ class FileClientGUI:
             self.tree.insert("", "end", text=item)
 
     def on_item_double_click(self, event):
+        """Handle double-click event to either enter a folder or download a file"""
         selected_item = self.tree.selection()
         if selected_item:
             item_name = self.tree.item(selected_item[0], "text")
