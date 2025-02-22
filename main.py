@@ -5,14 +5,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 class FileClient:
-    def __init__(self, host='0.0.0.0', port=5555):
+    def __init__(self, host='localhost', port=5555):
         self.host = host
         self.port = port
         self.client_socket = None
 
     def connect(self):
         self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect(('192.168.4.249', self.port))
+        self.client_socket.connect((self.host, self.port))
 
     def disconnect(self):
         if self.client_socket:
@@ -49,6 +49,7 @@ class FileClient:
         except Exception as e:
             print(f"Error during file download: {str(e)}")
             return f"Error during file download: {str(e)}"
+
 
 class FileClientGUI:
     def __init__(self, root):
@@ -87,20 +88,20 @@ class FileClientGUI:
         self.search_button = tk.Button(self.frame_controls, text="Search", command=self.search_files)
         self.search_button.pack(side=tk.RIGHT, padx=5, pady=5)
 
-        # Initialize Treeview with additional columns for metadata
-        self.tree_frame = tk.Frame(root)  # Create a frame to hold the Treeview and Scrollbar
-        self.tree_frame.pack(fill=tk.BOTH, expand=True)
+        # Initialize Listbox (Replaces Treeview)
+        self.listbox_frame = tk.Frame(root)  # Create a frame to hold the Listbox and Scrollbar
+        self.listbox_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Treeview
-        self.tree = ttk.Treeview(self.tree_frame, style="Custom.Treeview")
-        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # Listbox
+        self.listbox = tk.Listbox(self.listbox_frame, bg="white", fg="black", selectmode=tk.SINGLE)
+        self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # Scrollbar
-        self.tree_scrollbar = tk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree.yview)
-        self.tree_scrollbar.pack(side=tk.RIGHT, fill="y")
+        # Scrollbar for Listbox
+        self.listbox_scrollbar = tk.Scrollbar(self.listbox_frame, orient="vertical", command=self.listbox.yview)
+        self.listbox_scrollbar.pack(side=tk.RIGHT, fill="y")
 
-        # Attach the scrollbar to the treeview
-        self.tree.config(yscrollcommand=self.tree_scrollbar.set)
+        # Attach the scrollbar to the listbox
+        self.listbox.config(yscrollcommand=self.listbox_scrollbar.set)
 
         self.current_folder = "C:\\"
         self.folder_stack = []
@@ -119,26 +120,13 @@ class FileClientGUI:
         # Apply the initial theme configuration
         self.configure_theme()
 
-        # Bind double-click event to tree view (this was missing in the initial code)
-        self.tree.bind("<Double-1>", self.on_item_double_click)
-
+        # Bind double-click event to listbox
+        self.listbox.bind("<Double-1>", self.on_item_double_click)
 
     def configure_theme(self):
         """Configures widget styles for light or dark mode."""
         if self.theme == "light":
             # Light Mode Styles
-            self.style.configure(
-                "Custom.Treeview",
-                background="white",
-                foreground="black",
-                fieldbackground="white",
-                rowheight=25,
-            )
-            self.style.map(
-                "Custom.Treeview",
-                background=[("selected", "blue")],
-                foreground=[("selected", "white")],
-            )
             self.root.configure(bg="lightgray")
             self.frame_controls.configure(bg="lightgreen")
 
@@ -147,27 +135,21 @@ class FileClientGUI:
             for entry in self.entries:
                 entry.configure(bg="white", fg="black", insertbackground="black")
 
+            self.listbox.config(bg="white", fg="black", selectbackground="blue", selectforeground="white")
+            self.listbox_scrollbar.config(bg="lightgray")  # Reset scrollbar bg color
+
         else:
             # Dark Mode Styles
-            self.style.configure(
-                "Custom.Treeview",
-                background="gray4",
-                foreground="white",
-                fieldbackground="gray4",
-                rowheight=25,
-            )
-            self.style.map(
-                "Custom.Treeview",
-                background=[("selected", "darkorange")],
-                foreground=[("selected", "white")],
-            )
             self.root.configure(bg="black")
-            self.frame_controls.configure(bg="gray4")
+            self.frame_controls.configure(bg="black")
 
             for button in self.buttons:
                 button.configure(bg="gray4", fg="white", activebackground="darkorange", activeforeground="white")
             for entry in self.entries:
                 entry.configure(bg="gray4", fg="white", insertbackground="white")
+
+            self.listbox.config(bg="gray4", fg="white", selectbackground="darkorange", selectforeground="white")
+            self.listbox_scrollbar.config(bg="gray4")  # Apply dark mode to scrollbar
 
     def toggle_theme(self):
         """Switch between light and dark mode."""
@@ -178,7 +160,7 @@ class FileClientGUI:
     def connect_to_server(self):
         try:
             self.client.connect()
-            self.update_tree(self.client.request_directories().split('\n'))
+            self.update_listbox(self.client.request_directories().split('\n'))
             self.connect_button.config(state=tk.DISABLED)
             self.disconnect_button.config(state=tk.NORMAL)
             self.back_button.config(state=tk.NORMAL)
@@ -189,22 +171,22 @@ class FileClientGUI:
 
     def disconnect_from_server(self):
         self.client.disconnect()
-        self.tree.delete(*self.tree.get_children())
+        self.listbox.delete(0, tk.END)
         self.connect_button.config(state=tk.NORMAL)
         self.disconnect_button.config(state=tk.DISABLED)
         self.back_button.config(state=tk.DISABLED)
         messagebox.showinfo("Disconnection", "Disconnected from server.")
 
-    def update_tree(self, items):
-        self.tree.delete(*self.tree.get_children())
+    def update_listbox(self, items):
+        self.listbox.delete(0, tk.END)  # Clear the listbox first
         for item in items:
-            self.tree.insert("", "end", text=item)
+            self.listbox.insert(tk.END, item)
 
     def on_item_double_click(self, event):
         """Handle double-click event to either enter a folder or download a file"""
-        selected_item = self.tree.selection()
-        if selected_item:
-            item_name = self.tree.item(selected_item[0], "text")
+        selected_item_index = self.listbox.curselection()
+        if selected_item_index:
+            item_name = self.listbox.get(selected_item_index)
             full_path = os.path.join(self.current_folder, item_name)
 
             try:
@@ -221,7 +203,7 @@ class FileClientGUI:
                     # It's a folder, update the view
                     self.current_folder = full_path
                     self.folder_stack.append(self.current_folder)
-                    self.update_tree(response.split('\n'))
+                    self.update_listbox(response.split('\n'))
 
             except Exception as e:
                 messagebox.showerror("Error", str(e))
@@ -232,7 +214,7 @@ class FileClientGUI:
             self.current_folder = self.folder_stack[-1]
             try:
                 response = self.client.navigate_folder(self.current_folder)
-                self.update_tree(response.split('\n'))
+                self.update_listbox(response.split('\n'))
             except Exception as e:
                 messagebox.showerror("Error", str(e))
         else:
@@ -244,7 +226,7 @@ class FileClientGUI:
             # If no query is entered, show the current directory
             try:
                 response = self.client.navigate_folder(self.current_folder)
-                self.update_tree(response.split('\n'))
+                self.update_listbox(response.split('\n'))
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to fetch current directory: {str(e)}")
             return
@@ -257,8 +239,8 @@ class FileClientGUI:
             if "No matches found" in response:
                 messagebox.showinfo("Search", "No files or folders matched your search.")
             else:
-                # Update the tree with the search results
-                self.update_tree(response.split('\n'))
+                # Update the listbox with the search results
+                self.update_listbox(response.split('\n'))
 
         except Exception as e:
             messagebox.showerror("Error", f"Search failed: {str(e)}")
@@ -268,6 +250,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = FileClientGUI(root)
     root.mainloop()
-
-
-
